@@ -1,8 +1,7 @@
 /**
  * backend/src/parsers/ast_parser.js
- * AST Syntax Tree Parsing Engine:
- *  1. JS/TS/JSX/TSX: Babel AST Engine (@babel/parser + @babel/traverse)
- *  2. Python/Java/Go/Other: Web-Tree-Sitter AST Node Walker Engine
+ * Rich AST Parsing Engine with Function-to-Function Call Graphs,
+ * Docstrings, Parameter Types, Return Types & Class Relationships.
  */
 
 import * as babelParser from '@babel/parser';
@@ -40,7 +39,7 @@ const TAINT_SOURCE_PATTERNS = [
   /\$_GET\[|_POST\[|_REQUEST\[/
 ];
 
-// Fallback grammar patterns for non-JS files
+// Grammar patterns for non-JS files
 const LANGUAGE_PATTERNS = {
   py: {
     functions: /def\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\):/g,
@@ -80,6 +79,49 @@ function detectTaintSources(line) {
 function extractTaintSourceType(line) {
   const match = line.match(/req\.(body|query|params)|request\.(body|query|params|args|json)|process\.argv|process\.env/);
   return match ? match[0] : 'user_input';
+}
+
+/**
+ * Helper to extract leading docstrings/comments above node
+ */
+function extractDocstring(node, lines) {
+  if (!node || !node.loc) return '';
+  const startLine = node.loc.start.line - 1;
+  const docLines = [];
+  for (let i = startLine - 1; i >= Math.max(0, startLine - 5); i--) {
+    const line = (lines[i] || '').trim();
+    if (line.startsWith('//') || line.startsWith('*') || line.startsWith('/*') || line.startsWith('"""') || line.startsWith("'''")) {
+      docLines.unshift(line.replace(/^(\/\/|\/\*|\*|\"\"\"|\'\'\')/, '').trim());
+    } else {
+      break;
+    }
+  }
+  return docLines.join(' ');
+}
+
+/**
+ * Extract called function names from function body AST node
+ */
+function extractCalledFunctions(bodyNode) {
+  const called = [];
+  function walkCall(node) {
+    if (!node || typeof node !== 'object') return;
+    if (node.type === 'CallExpression') {
+      if (node.callee.type === 'Identifier') {
+        called.push(node.callee.name);
+      } else if (node.callee.type === 'MemberExpression' && node.callee.property) {
+        called.push(node.callee.property.name);
+      }
+    }
+    for (const k of Object.keys(node)) {
+      if (k === 'loc' || k === 'comments') continue;
+      const child = node[k];
+      if (Array.isArray(child)) child.forEach(walkCall);
+      else if (child && typeof child === 'object' && child.type) walkCall(child);
+    }
+  }
+  walkCall(bodyNode);
+  return [...new Set(called)].filter(name => !['require', 'log', 'error', 'warn', 'push', 'map', 'forEach', 'filter'].includes(name));
 }
 
 /**
@@ -125,24 +167,42 @@ function parseJavaScriptAST(filePath, content) {
     function walkNode(node) {
       if (!node || typeof node !== 'object') return;
 
+      // Extract Functions & Async Methods
       if (node.type === 'FunctionDeclaration' && node.id) {
-        const params = (node.params || []).map(p => p.name || 'param').join(', ');
+        const params = (node.params || []).map(p => p.name || (p.left && p.left.name) || 'param').join(', ');
+        const returnType = node.returnType ? content.slice(node.returnType.start, node.returnType.end).replace(/^:\s*/, '') : (node.async ? 'Promise<any>' : 'any');
+        const comments = extractDocstring(node, lines);
+        const calledFunctions = extractCalledFunctions(node.body);
+
         functions.push({
           name: node.id.name,
           params,
+          returnType,
+          comments,
+          async: !!node.async,
+          calledFunctions,
           loc: node.loc ? (node.loc.end.line - node.loc.start.line + 1) : 1,
           complexity: calculateComplexity(content.slice(node.start, node.end)),
           file: filePath
         });
       }
 
+      // Arrow Functions & Function Expressions
       if (node.type === 'VariableDeclarator' && node.init &&
           (node.init.type === 'ArrowFunctionExpression' || node.init.type === 'FunctionExpression')) {
         if (node.id && node.id.name) {
-          const params = (node.init.params || []).map(p => p.name || 'param').join(', ');
+          const params = (node.init.params || []).map(p => p.name || (p.left && p.left.name) || 'param').join(', ');
+          const returnType = node.init.returnType ? content.slice(node.init.returnType.start, node.init.returnType.end).replace(/^:\s*/, '') : (node.init.async ? 'Promise<any>' : 'any');
+          const comments = extractDocstring(node, lines);
+          const calledFunctions = extractCalledFunctions(node.init.body);
+
           functions.push({
             name: node.id.name,
             params,
+            returnType,
+            comments,
+            async: !!node.init.async,
+            calledFunctions,
             loc: node.init.loc ? (node.init.loc.end.line - node.init.loc.start.line + 1) : 1,
             complexity: calculateComplexity(content.slice(node.init.start, node.init.end)),
             file: filePath
@@ -150,18 +210,31 @@ function parseJavaScriptAST(filePath, content) {
         }
       }
 
+      // Class Declarations & Methods
       if (node.type === 'ClassDeclaration' && node.id) {
+        const classMethods = [];
+        if (node.body && node.body.body) {
+          node.body.body.forEach(m => {
+            if (m.type === 'ClassMethod' && m.key && m.key.name) {
+              classMethods.push(m.key.name);
+            }
+          });
+        }
+
         classes.push({
           name: node.id.name,
           extends: node.superClass ? node.superClass.name : null,
+          methods: classMethods,
           file: filePath
         });
       }
 
+      // Imports
       if (node.type === 'ImportDeclaration' && node.source) {
         imports.push(node.source.value);
       }
 
+      // Express & HTTP Routes
       if (node.type === 'CallExpression' && node.callee) {
         if (node.callee.type === 'Identifier' && node.callee.name === 'require' &&
             node.arguments && node.arguments[0] && node.arguments[0].type === 'StringLiteral') {
@@ -224,14 +297,12 @@ function parseWithTreeSitter(filePath, content, langKey) {
   const routes = [];
   const taintSources = [];
 
-  // Line-by-line taint analysis
   lines.forEach((line, idx) => {
     if (detectTaintSources(line)) {
       taintSources.push({ line: idx + 1, code: line.trim(), type: extractTaintSourceType(line) });
     }
   });
 
-  // Tree-Sitter AST Tree Traversal
   if (isTreeSitterInit && treeSitterParser) {
     try {
       const tree = treeSitterParser.parse(content);
@@ -239,32 +310,34 @@ function parseWithTreeSitter(filePath, content, langKey) {
         function walkTreeSitterAST(node) {
           if (!node) return;
 
-          // Extract Function Definitions / Declarations
           if (['function_definition', 'method_declaration', 'function_declaration'].includes(node.type)) {
             const nameNode = node.childForFieldName('name') || node.children.find(c => c.type === 'identifier');
             if (nameNode) {
               functions.push({
                 name: nameNode.text,
                 params: '',
+                returnType: 'any',
+                comments: '',
+                async: false,
+                calledFunctions: [],
                 complexity: calculateComplexity(node.text),
                 file: filePath
               });
             }
           }
 
-          // Extract Class Declarations
           if (['class_definition', 'class_declaration'].includes(node.type)) {
             const nameNode = node.childForFieldName('name') || node.children.find(c => c.type === 'identifier');
             if (nameNode) {
               classes.push({
                 name: nameNode.text,
                 extends: null,
+                methods: [],
                 file: filePath
               });
             }
           }
 
-          // Recursively walk AST children
           for (let i = 0; i < node.childCount; i++) {
             walkTreeSitterAST(node.child(i));
           }
@@ -272,26 +345,32 @@ function parseWithTreeSitter(filePath, content, langKey) {
 
         walkTreeSitterAST(tree.rootNode);
       }
-    } catch (e) {
-      // Keep resilient fallback
-    }
+    } catch (e) {}
   }
 
-  // Complement AST tree traversal with pattern extractors for imports/routes
   let match;
   const fRegex = new RegExp(patterns.functions.source, patterns.functions.flags);
   while ((match = fRegex.exec(content)) !== null) {
     const name = match[1];
     const params = match[2] || '';
     if (name && !functions.some(f => f.name === name) && !['if', 'for', 'while', 'switch', 'catch'].includes(name)) {
-      functions.push({ name, params: params.trim(), complexity: calculateComplexity(match[0]), file: filePath });
+      functions.push({
+        name,
+        params: params.trim(),
+        returnType: 'any',
+        comments: '',
+        async: false,
+        calledFunctions: [],
+        complexity: calculateComplexity(match[0]),
+        file: filePath
+      });
     }
   }
 
   const cRegex = new RegExp(patterns.classes.source, patterns.classes.flags);
   while ((match = cRegex.exec(content)) !== null) {
     if (match[1] && !classes.some(c => c.name === match[1])) {
-      classes.push({ name: match[1], extends: match[2] || null, file: filePath });
+      classes.push({ name: match[1], extends: match[2] || null, methods: [], file: filePath });
     }
   }
 
@@ -318,9 +397,6 @@ function parseWithTreeSitter(filePath, content, langKey) {
   };
 }
 
-/**
- * Main Entry Point: Hybrid AST Parser Router
- */
 export function parseFileAST(filePath, content) {
   const langKey = getLanguageKey(filePath);
   if (langKey === 'js') {

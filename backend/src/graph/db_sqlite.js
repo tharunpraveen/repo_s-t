@@ -38,21 +38,36 @@ export class SQLiteGraphStorage extends GraphStorageInterface {
     return node;
   }
 
-  async addFunctionNode(filePath, name, params, complexity, repoKey = 'default') {
+  async addFunctionNode(filePath, name, params, complexity, meta = {}, repoKey = 'default') {
     const id = `func:${repoKey}:${filePath}:${name}`;
-    const node = { id, label: 'FunctionNode', file: filePath, name, params, complexity, repo: repoKey };
+    const returnType = meta.returnType || 'any';
+    const comments = meta.comments || '';
+    const isAsync = meta.async || false;
+    const node = { id, label: 'FunctionNode', file: filePath, name, params, complexity, returnType, comments, isAsync, repo: repoKey };
     this.nodes.set(id, node);
     this.addEdge(`file:${repoKey}:${filePath}`, id, 'CONTAINS');
     return node;
   }
 
-  async addClassNode(filePath, name, extendsClass, repoKey = 'default') {
+  async addClassNode(filePath, name, extendsClass, methods = [], repoKey = 'default') {
     const id = `class:${repoKey}:${filePath}:${name}`;
-    const node = { id, label: 'ClassNode', file: filePath, name, extends: extendsClass, repo: repoKey };
+    const node = { id, label: 'ClassNode', file: filePath, name, extends: extendsClass, methods, repo: repoKey };
     this.nodes.set(id, node);
     this.addEdge(`file:${repoKey}:${filePath}`, id, 'CONTAINS');
+    if (extendsClass) {
+      this.addEdge(id, `class:${repoKey}:${extendsClass}`, 'EXTENDS');
+    }
+    for (const mName of methods) {
+      this.addEdge(id, `func:${repoKey}:${filePath}:${mName}`, 'HAS_METHOD');
+    }
     return node;
   }
+
+  async addCallEdge(callerFile, callerName, calleeName, repoKey = 'default') {
+    const callerId = `func:${repoKey}:${callerFile}:${callerName}`;
+    this.addEdge(callerId, `func:${repoKey}:${calleeName}`, 'CALLS');
+  }
+
 
   async addEndpointNode(filePath, method, path, repoKey = 'default') {
     const id = `route:${repoKey}:${filePath}:${method}:${path}`;

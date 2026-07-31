@@ -7,18 +7,30 @@
       {
         "name": "__init__",
         "params": "self, owner",
+        "returnType": "any",
+        "comments": "",
+        "async": false,
+        "calledFunctions": [],
         "complexity": 1,
         "file": "sample_script.py"
       },
       {
         "name": "deposit_funds",
         "params": "self, amount",
+        "returnType": "any",
+        "comments": "",
+        "async": false,
+        "calledFunctions": [],
         "complexity": 1,
         "file": "sample_script.py"
       },
       {
         "name": "handle_deposit",
         "params": "",
+        "returnType": "any",
+        "comments": "",
+        "async": false,
+        "calledFunctions": [],
         "complexity": 1,
         "file": "sample_script.py"
       }
@@ -27,6 +39,7 @@
       {
         "name": "AccountManager",
         "extends": null,
+        "methods": [],
         "file": "sample_script.py"
       }
     ],
@@ -57,6 +70,10 @@
       {
         "name": "processTransaction",
         "params": "String userId, double amount",
+        "returnType": "any",
+        "comments": "",
+        "async": false,
+        "calledFunctions": [],
         "complexity": 1,
         "file": "PaymentService.java"
       }
@@ -65,6 +82,7 @@
       {
         "name": "PaymentService",
         "extends": null,
+        "methods": [],
         "file": "PaymentService.java"
       }
     ],

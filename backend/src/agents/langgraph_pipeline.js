@@ -122,15 +122,32 @@ async function indexGraphNode(state) {
     const ast = state.astSummaries.find(a => a.filePath === file.path) || parseFileAST(file.path, file.content);
 
     await globalKnowledgeGraph.addFileNode(file.path, ast.language, ast.loc, state.repoKey);
+
     for (const f of ast.functions) {
-      await globalKnowledgeGraph.addFunctionNode(file.path, f.name, f.params, f.complexity, state.repoKey);
+      await globalKnowledgeGraph.addFunctionNode(
+        file.path, 
+        f.name, 
+        f.params, 
+        f.complexity, 
+        { returnType: f.returnType, comments: f.comments, async: f.async },
+        state.repoKey
+      );
+
+      for (const callee of f.calledFunctions || []) {
+        if (globalKnowledgeGraph.addCallEdge) {
+          await globalKnowledgeGraph.addCallEdge(file.path, f.name, callee, state.repoKey);
+        }
+      }
     }
+
     for (const c of ast.classes) {
-      await globalKnowledgeGraph.addClassNode(file.path, c.name, c.extends, state.repoKey);
+      await globalKnowledgeGraph.addClassNode(file.path, c.name, c.extends, c.methods || [], state.repoKey);
     }
+
     for (const r of ast.routes) {
       await globalKnowledgeGraph.addEndpointNode(file.path, r.method, r.path, state.repoKey);
     }
+
     for (const imp of ast.imports || []) {
       if (typeof imp === 'string' && imp.trim()) {
         await globalKnowledgeGraph.addEdge(
@@ -140,6 +157,7 @@ async function indexGraphNode(state) {
         );
       }
     }
+
   }
 
   const primaryFile = state.validLoadedFiles[0]?.path || 'index.js';
