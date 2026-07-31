@@ -34,11 +34,30 @@ export class Neo4jGraphStorage extends GraphStorageInterface {
       await this.driver.verifyConnectivity();
       this.isConnected = true;
       console.log(`[Neo4j Engine] Connected successfully to Neo4j database at ${effectiveUri}`);
+      await this.initIndexes();
     } catch (err) {
       console.warn(`[Neo4j Engine Warning] Could not connect to Neo4j at ${this.uri} (${err.message}). Using in-memory property graph fallback.`);
       this.isConnected = false;
     }
   }
+
+  async initIndexes() {
+    if (!this.isConnected || !this.driver) return;
+    const session = this.driver.session();
+    try {
+      await session.run(`CREATE CONSTRAINT file_id_unique IF NOT EXISTS FOR (f:File) REQUIRE f.id IS UNIQUE`);
+      await session.run(`CREATE CONSTRAINT func_id_unique IF NOT EXISTS FOR (fn:Function) REQUIRE fn.id IS UNIQUE`);
+      await session.run(`CREATE CONSTRAINT class_id_unique IF NOT EXISTS FOR (c:Class) REQUIRE c.id IS UNIQUE`);
+      await session.run(`CREATE CONSTRAINT route_id_unique IF NOT EXISTS FOR (e:Endpoint) REQUIRE e.id IS UNIQUE`);
+      await session.run(`CREATE INDEX func_name_idx IF NOT EXISTS FOR (fn:Function) ON (fn.name)`);
+      console.log('[Neo4j Engine] High-performance indexes & unique constraints initialized.');
+    } catch (err) {
+      // Ignored for compatibility
+    } finally {
+      await session.close();
+    }
+  }
+
 
 
   async clear(repoKey = null) {
