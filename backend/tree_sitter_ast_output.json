@@ -1,0 +1,84 @@
+{
+  "pythonAST": {
+    "filePath": "sample_script.py",
+    "language": "py",
+    "loc": 18,
+    "functions": [
+      {
+        "name": "__init__",
+        "params": "self, owner",
+        "complexity": 1,
+        "file": "sample_script.py"
+      },
+      {
+        "name": "deposit_funds",
+        "params": "self, amount",
+        "complexity": 1,
+        "file": "sample_script.py"
+      },
+      {
+        "name": "handle_deposit",
+        "params": "",
+        "complexity": 1,
+        "file": "sample_script.py"
+      }
+    ],
+    "classes": [
+      {
+        "name": "AccountManager",
+        "extends": null,
+        "file": "sample_script.py"
+      }
+    ],
+    "imports": [
+      "os",
+      "sys"
+    ],
+    "routes": [
+      {
+        "method": "GET",
+        "path": "/",
+        "file": "sample_script.py"
+      }
+    ],
+    "taintSources": [
+      {
+        "line": 16,
+        "code": "data = request.json",
+        "type": "request.json"
+      }
+    ]
+  },
+  "javaAST": {
+    "filePath": "PaymentService.java",
+    "language": "java",
+    "loc": 15,
+    "functions": [
+      {
+        "name": "processTransaction",
+        "params": "String userId, double amount",
+        "complexity": 1,
+        "file": "PaymentService.java"
+      }
+    ],
+    "classes": [
+      {
+        "name": "PaymentService",
+        "extends": null,
+        "file": "PaymentService.java"
+      }
+    ],
+    "imports": [
+      "java.util.List",
+      "org.springframework.web.bind.annotation.*"
+    ],
+    "routes": [
+      {
+        "method": "POSTMAPPING",
+        "path": "/api/pay",
+        "file": "PaymentService.java"
+      }
+    ],
+    "taintSources": []
+  }
+}

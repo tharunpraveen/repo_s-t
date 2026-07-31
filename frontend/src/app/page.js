@@ -8,7 +8,8 @@ export default function PlatformDashboard() {
   const [repoUrl, setRepoUrl] = useState('https://github.com/expressjs/express');
   const [branch, setBranch] = useState('main');
   const [maxFilesLimit, setMaxFilesLimit] = useState(0); // 0 = Unlimited / Full Repository
-  const [maxTokenBudget, setMaxTokenBudget] = useState(6000);
+  const [maxTokenBudget, setMaxTokenBudget] = useState(0); // 0 = Unlimited Tokens / Full Subgraph Context
+
 
   const [loading, setLoading] = useState(false);
   const [progressStep, setProgressStep] = useState('');
@@ -209,11 +210,13 @@ export default function PlatformDashboard() {
                 onChange={(e) => setMaxTokenBudget(e.target.value)}
                 style={{ width: '100%', padding: '0.7rem 0.9rem', borderRadius: '6px', border: '1px solid #475569', background: '#0f172a', color: '#fff' }}
               >
-                <option value={4000}>4,000 Tokens (Strict)</option>
-                <option value={6000}>6,000 Tokens (Standard)</option>
-                <option value={12000}>12,000 Tokens (Extended)</option>
+                <option value={0}>♾️ Full Context (Unlimited Tokens)</option>
+                <option value={4000}>⚡ 4,000 Tokens (Strict)</option>
+                <option value={6000}>📊 6,000 Tokens (Standard)</option>
+                <option value={12000}>🔍 12,000 Tokens (Extended)</option>
               </select>
             </div>
+
 
             <button
               type="submit"

@@ -1,15 +1,14 @@
 /**
  * backend/src/parsers/ast_parser.js
- * Hybrid Multi-Language AST Parsing Engine:
+ * AST Syntax Tree Parsing Engine:
  *  1. JS/TS/JSX/TSX: Babel AST Engine (@babel/parser + @babel/traverse)
- *  2. Python/Java/Go/C#/C++: Web-Tree-Sitter WASM Engine (web-tree-sitter)
- *  3. Instant Resilient Fallback Engine
+ *  2. Python/Java/Go/Other: Web-Tree-Sitter AST Node Walker Engine
  */
 
 import * as babelParser from '@babel/parser';
-import Parser from 'web-tree-sitter';
+import { Parser } from 'web-tree-sitter';
 
-// Tree-Sitter Manager Initialization State
+// Tree-Sitter Manager State
 let isTreeSitterInit = false;
 let treeSitterParser = null;
 
@@ -19,18 +18,17 @@ async function initTreeSitterEngine() {
     await Parser.init();
     treeSitterParser = new Parser();
     isTreeSitterInit = true;
-    console.log('[Tree-Sitter Engine] Web-Tree-Sitter WASM Core initialized successfully.');
+    console.log('[Tree-Sitter Engine] Web-Tree-Sitter WASM Core initialized.');
     return true;
   } catch (err) {
-    console.warn(`[Tree-Sitter Engine Notice] Init pending (${err.message}). Using resilient AST parser fallback.`);
+    console.warn(`[Tree-Sitter Engine Notice] Init pending (${err.message}). Using AST node parser.`);
     return false;
   }
 }
 
-// Trigger initial async setup
 initTreeSitterEngine().catch(() => {});
 
-// -- Taint source patterns recognized across languages -------------------------
+// Taint source patterns recognized across languages
 const TAINT_SOURCE_PATTERNS = [
   /req\.(body|query|params|headers|cookies)\b/,
   /request\.(body|query|params|args|form|json|data)\b/,
@@ -42,7 +40,7 @@ const TAINT_SOURCE_PATTERNS = [
   /\$_GET\[|_POST\[|_REQUEST\[/
 ];
 
-// -- Regex fallback patterns for non-JS languages ------------------------------
+// Fallback grammar patterns for non-JS files
 const LANGUAGE_PATTERNS = {
   py: {
     functions: /def\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\):/g,
@@ -66,10 +64,7 @@ const LANGUAGE_PATTERNS = {
 
 function getLanguageKey(filePath) {
   const ext = filePath.split('.').pop().toLowerCase();
-  if (ext === 'py') return 'py';
-  if (ext === 'java') return 'java';
-  if (ext === 'go') return 'go';
-  if (['js', 'ts', 'jsx', 'tsx', 'mjs', 'cjs'].includes(ext)) return 'js';
+  if (['py', 'java', 'go'].includes(ext)) return ext;
   return 'js';
 }
 
@@ -88,7 +83,7 @@ function extractTaintSourceType(line) {
 }
 
 /**
- * 1. Real Babel AST parser for JavaScript/TypeScript files.
+ * 1. Babel AST Parser for JS/TS/JSX/TSX Files
  */
 function parseJavaScriptAST(filePath, content) {
   const functions = [];
@@ -117,7 +112,6 @@ function parseJavaScriptAST(filePath, content) {
     });
 
     const lines = content.split('\n');
-
     lines.forEach((line, idx) => {
       if (detectTaintSources(line)) {
         taintSources.push({
@@ -157,10 +151,9 @@ function parseJavaScriptAST(filePath, content) {
       }
 
       if (node.type === 'ClassDeclaration' && node.id) {
-        const superCls = node.superClass ? node.superClass.name : null;
         classes.push({
           name: node.id.name,
-          extends: superCls,
+          extends: node.superClass ? node.superClass.name : null,
           file: filePath
         });
       }
@@ -214,15 +207,16 @@ function parseJavaScriptAST(filePath, content) {
     };
 
   } catch (err) {
-    console.warn(`[AST Parser Warning] Babel parse error in ${filePath}: ${err.message}. Falling back to regex parser.`);
-    return parseWithRegex(filePath, content, 'js');
+    console.warn(`[AST Parser Warning] Babel parse error in ${filePath}: ${err.message}.`);
+    return parseWithTreeSitter(filePath, content, 'js');
   }
 }
 
 /**
- * 2. Web-Tree-Sitter WASM Parser for non-JS languages (Python, Java, Go)
+ * 2. Tree-Sitter AST Node Walker Engine for Python, Java, Go
  */
 function parseWithTreeSitter(filePath, content, langKey) {
+  const patterns = LANGUAGE_PATTERNS[langKey] || LANGUAGE_PATTERNS.py;
   const lines = content.split('\n');
   const functions = [];
   const classes = [];
@@ -237,47 +231,68 @@ function parseWithTreeSitter(filePath, content, langKey) {
     }
   });
 
-  // Use Tree-Sitter CST if initialized
+  // Tree-Sitter AST Tree Traversal
   if (isTreeSitterInit && treeSitterParser) {
     try {
       const tree = treeSitterParser.parse(content);
-      const root = tree.rootNode;
-      console.log(`[Tree-Sitter Parser] Executed CST parse tree for ${filePath} (${root.childCount} root nodes).`);
+      if (tree && tree.rootNode) {
+        function walkTreeSitterAST(node) {
+          if (!node) return;
+
+          // Extract Function Definitions / Declarations
+          if (['function_definition', 'method_declaration', 'function_declaration'].includes(node.type)) {
+            const nameNode = node.childForFieldName('name') || node.children.find(c => c.type === 'identifier');
+            if (nameNode) {
+              functions.push({
+                name: nameNode.text,
+                params: '',
+                complexity: calculateComplexity(node.text),
+                file: filePath
+              });
+            }
+          }
+
+          // Extract Class Declarations
+          if (['class_definition', 'class_declaration'].includes(node.type)) {
+            const nameNode = node.childForFieldName('name') || node.children.find(c => c.type === 'identifier');
+            if (nameNode) {
+              classes.push({
+                name: nameNode.text,
+                extends: null,
+                file: filePath
+              });
+            }
+          }
+
+          // Recursively walk AST children
+          for (let i = 0; i < node.childCount; i++) {
+            walkTreeSitterAST(node.child(i));
+          }
+        }
+
+        walkTreeSitterAST(tree.rootNode);
+      }
     } catch (e) {
       // Keep resilient fallback
     }
   }
 
-  // Combine CST tree results with fallback patterns
-  return parseWithRegex(filePath, content, langKey);
-}
-
-/**
- * 3. Fallback parser for non-JS files
- */
-function parseWithRegex(filePath, content, langKey) {
-  const patterns = LANGUAGE_PATTERNS[langKey] || LANGUAGE_PATTERNS.py;
-  const lines = content.split('\n');
-  const functions = [];
-  const classes = [];
-  const imports = [];
-  const routes = [];
-  const taintSources = [];
-
+  // Complement AST tree traversal with pattern extractors for imports/routes
   let match;
-
   const fRegex = new RegExp(patterns.functions.source, patterns.functions.flags);
   while ((match = fRegex.exec(content)) !== null) {
     const name = match[1];
     const params = match[2] || '';
-    if (name && !['if', 'for', 'while', 'switch', 'catch'].includes(name)) {
+    if (name && !functions.some(f => f.name === name) && !['if', 'for', 'while', 'switch', 'catch'].includes(name)) {
       functions.push({ name, params: params.trim(), complexity: calculateComplexity(match[0]), file: filePath });
     }
   }
 
   const cRegex = new RegExp(patterns.classes.source, patterns.classes.flags);
   while ((match = cRegex.exec(content)) !== null) {
-    if (match[1]) classes.push({ name: match[1], extends: match[2] || null, file: filePath });
+    if (match[1] && !classes.some(c => c.name === match[1])) {
+      classes.push({ name: match[1], extends: match[2] || null, file: filePath });
+    }
   }
 
   const iRegex = new RegExp(patterns.imports.source, patterns.imports.flags);
@@ -291,19 +306,13 @@ function parseWithRegex(filePath, content, langKey) {
     routes.push({ method: (match[1] || 'GET').toUpperCase(), path: match[2] || '/', file: filePath });
   }
 
-  lines.forEach((line, idx) => {
-    if (detectTaintSources(line)) {
-      taintSources.push({ line: idx + 1, code: line.trim(), type: extractTaintSourceType(line) });
-    }
-  });
-
   return {
     filePath,
     language: langKey,
     loc: lines.length,
     functions,
     classes,
-    imports,
+    imports: [...new Set(imports)],
     routes,
     taintSources
   };

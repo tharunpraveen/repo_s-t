@@ -164,10 +164,13 @@ app.post('/api/agent/ingest-github', rateLimiter, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid GitHub repository URL. Expected format: https://github.com/owner/repo' });
     }
 
-    // Numeric params calculation (0 or unlimited means process all repository files)
     const rawFilesLimit = parseInt(maxFilesLimit, 10);
-    const safeMaxFiles = (rawFilesLimit && rawFilesLimit > 0) ? rawFilesLimit : 999999;
-    const safeMaxTokens = Math.min(Math.max(parseInt(maxTokenBudget, 10) || 6000, 1000), 64000);
+    const safeMaxFiles = (!isNaN(rawFilesLimit) && rawFilesLimit > 0) ? rawFilesLimit : 999999;
+    const rawTokens = parseInt(maxTokenBudget, 10);
+    const safeMaxTokens = (!isNaN(rawTokens) && rawTokens > 0) ? rawTokens : 9999999;
+
+
+
 
 
     const job = jobOrchestrator.createJob(repoUrl.trim(), { branch, maxFilesLimit: safeMaxFiles, maxTokenBudget: safeMaxTokens });

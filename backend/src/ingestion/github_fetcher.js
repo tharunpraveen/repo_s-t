@@ -108,7 +108,7 @@ export function parseGitHubUrl(url) {
 /**
  * Scrapes repository tree directly from GitHub HTML UI (bypassing REST API rate limits)
  */
-async function scrapeGitHubRepoTreeHTML(owner, repo, branch = 'main') {
+async function scrapeGitHubRepoTreeHTML(owner, repo, branch = 'main', isRetry = false) {
   console.log(`[Ingestion Agent] Scraper Fallback: Extracting real repository tree for ${owner}/${repo} from GitHub Web UI...`);
   const validExtensions = ['.js', '.ts', '.jsx', '.tsx', '.py', '.java', '.go', '.cs', '.cpp', '.c', '.rs', '.php', '.sql', '.cjs', '.mjs'];
   const blobRegex = new RegExp(`href=["']/${owner}/${repo}/blob/${branch}/([^"']+)`, 'g');
@@ -120,9 +120,9 @@ async function scrapeGitHubRepoTreeHTML(owner, repo, branch = 'main') {
   try {
     const rootUrl = `https://github.com/${owner}/${repo}/tree/${branch}`;
     const res = await fetch(rootUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' } });
-    if (!res.ok && (branch === 'main' || branch === 'master')) {
+    if (!res.ok && !isRetry && (branch === 'main' || branch === 'master')) {
       const altBranch = branch === 'main' ? 'master' : 'main';
-      return scrapeGitHubRepoTreeHTML(owner, repo, altBranch);
+      return scrapeGitHubRepoTreeHTML(owner, repo, altBranch, true);
     }
 
     const html = await res.text();
