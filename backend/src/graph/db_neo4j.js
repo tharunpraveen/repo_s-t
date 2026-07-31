@@ -92,7 +92,7 @@ export class Neo4jGraphStorage extends GraphStorageInterface {
 
   async addFileNode(filePath, language, loc, repoKey = 'default') {
     const id = `file:${repoKey}:${filePath}`;
-    const node = { id, label: 'FileNode', path: filePath, language, loc, repo: repoKey };
+    const node = { id, label: 'FileNode', name: filePath, path: filePath, language, loc, repo: repoKey };
     this.fallbackNodes.set(id, node);
 
     if (this.isConnected && this.driver) {
@@ -100,7 +100,7 @@ export class Neo4jGraphStorage extends GraphStorageInterface {
       try {
         await session.run(
           `MERGE (f:File {id: $id})
-           SET f.path = $filePath, f.language = $language, f.loc = $loc, f.repo = $repoKey`,
+           SET f.name = $filePath, f.path = $filePath, f.language = $language, f.loc = $loc, f.repo = $repoKey`,
           { id, filePath, language, loc, repoKey }
         );
       } catch (err) {
@@ -111,6 +111,7 @@ export class Neo4jGraphStorage extends GraphStorageInterface {
     }
     return node;
   }
+
 
   async addFunctionNode(filePath, name, params, complexity, meta = {}, repoKey = 'default') {
     const id = `func:${repoKey}:${filePath}:${name}`;
@@ -187,7 +188,8 @@ export class Neo4jGraphStorage extends GraphStorageInterface {
 
   async addEndpointNode(filePath, method, path, repoKey = 'default') {
     const id = `route:${repoKey}:${filePath}:${method}:${path}`;
-    const node = { id, label: 'EndpointNode', file: filePath, method, path, repo: repoKey };
+    const name = `${method} ${path}`;
+    const node = { id, label: 'EndpointNode', name, file: filePath, method, path, repo: repoKey };
     this.fallbackNodes.set(id, node);
     this.addEdge(`file:${repoKey}:${filePath}`, id, 'EXPOSES_ROUTE');
 
@@ -197,9 +199,9 @@ export class Neo4jGraphStorage extends GraphStorageInterface {
         await session.run(
           `MATCH (f:File {id: $fileId})
            MERGE (r:Endpoint {id: $id})
-           SET r.method = $method, r.path = $path, r.file = $filePath, r.repo = $repoKey
+           SET r.name = $name, r.method = $method, r.path = $path, r.file = $filePath, r.repo = $repoKey
            MERGE (f)-[:EXPOSES_ROUTE]->(r)`,
-          { fileId: `file:${repoKey}:${filePath}`, id, method, path, filePath, repoKey }
+          { fileId: `file:${repoKey}:${filePath}`, id, name, method, path, filePath, repoKey }
         );
       } catch (err) {
         console.error('[Neo4j addEndpointNode Error]:', err.message);
@@ -233,7 +235,8 @@ export class Neo4jGraphStorage extends GraphStorageInterface {
 
   async addVulnerabilityNode(vulnId, filePath, line, type, severity, owasp, patch, repoKey = 'default') {
     const id = `vuln:${repoKey}:${vulnId}`;
-    const node = { id, label: 'VulnerabilityNode', filePath, line, type, severity, owasp, patch, repo: repoKey };
+    const name = `${type} (Line ${line})`;
+    const node = { id, label: 'VulnerabilityNode', name, filePath, line, type, severity, owasp, patch, repo: repoKey };
     this.fallbackNodes.set(id, node);
     this.addEdge(id, `file:${repoKey}:${filePath}`, 'AFFECTS');
 
@@ -243,11 +246,12 @@ export class Neo4jGraphStorage extends GraphStorageInterface {
         await session.run(
           `MATCH (f:File {id: $fileId})
            MERGE (v:Vulnerability {id: $id})
-           SET v.vulnId = $vulnId, v.line = $line, v.type = $type, v.severity = $severity, v.owasp = $owasp, v.patch = $patch, v.repo = $repoKey
+           SET v.name = $name, v.vulnId = $vulnId, v.line = $line, v.type = $type, v.severity = $severity, v.owasp = $owasp, v.patch = $patch, v.repo = $repoKey
            MERGE (v)-[:AFFECTS]->(f)`,
-          { fileId: `file:${repoKey}:${filePath}`, id, vulnId, line, type, severity, owasp, patch: typeof patch === 'string' ? patch : JSON.stringify(patch), repoKey }
+          { fileId: `file:${repoKey}:${filePath}`, id, name, vulnId, line, type, severity, owasp, patch: typeof patch === 'string' ? patch : JSON.stringify(patch), repoKey }
         );
       } catch (err) {
+
         console.error('[Neo4j addVulnerabilityNode Error]:', err.message);
       } finally {
         await session.close();
@@ -296,7 +300,8 @@ export class Neo4jGraphStorage extends GraphStorageInterface {
 
   async addTestCaseNode(testId, testFile, targetFile, testCount, code, repoKey = 'default') {
     const id = `test:${repoKey}:${testId}`;
-    const node = { id, label: 'TestCaseNode', testFile, targetFile, testCount, code, repo: repoKey };
+    const name = testId;
+    const node = { id, label: 'TestCaseNode', name, testFile, targetFile, testCount, code, repo: repoKey };
     this.fallbackNodes.set(id, node);
     this.addEdge(id, `file:${repoKey}:${targetFile}`, 'TESTS');
 
@@ -304,11 +309,11 @@ export class Neo4jGraphStorage extends GraphStorageInterface {
       const session = this.driver.session();
       try {
         await session.run(
-          `MATCH (f:File {id: $targetFileId})
+          `MATCH (f:File {id: $targetId})
            MERGE (t:TestCase {id: $id})
-           SET t.testFile = $testFile, t.targetFile = $targetFile, t.testCount = $testCount, t.code = $code, t.repo = $repoKey
+           SET t.name = $name, t.testFile = $testFile, t.targetFile = $targetFile, t.testCount = $testCount, t.code = $code, t.repo = $repoKey
            MERGE (t)-[:TESTS]->(f)`,
-          { targetFileId: `file:${repoKey}:${targetFile}`, id, testFile, targetFile, testCount, code, repoKey }
+          { targetId: `file:${repoKey}:${targetFile}`, id, name, testFile, targetFile, testCount, code, repoKey }
         );
       } catch (err) {
         console.error('[Neo4j addTestCaseNode Error]:', err.message);
