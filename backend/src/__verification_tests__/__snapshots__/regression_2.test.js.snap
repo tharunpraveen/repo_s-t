@@ -1,0 +1,13 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`Regression Snapshot Baseline for db_driver should match regression baseline output for query() 1`] = `
+{
+  "rows": [
+    {
+      "id": 1,
+      "name": "admin",
+    },
+  ],
+  "sql": undefined,
+}
+`;

@@ -1,0 +1,10 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`Regression Snapshot Baseline for auth_service should match regression baseline output for processPayment() 1`] = `
+{
+  "amount": undefined,
+  "currency": undefined,
+  "success": true,
+  "transactionId": "TX_1785422912029",
+}
+`;
