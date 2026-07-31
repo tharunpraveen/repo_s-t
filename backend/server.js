@@ -17,6 +17,8 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import { queryGraphWithAI } from './src/graph/cypher_agent.js';
+
 
 import { langGraphPipeline } from './src/agents/langgraph_pipeline.js';
 import { jobOrchestrator } from './src/services/job_orchestrator.js';
@@ -219,10 +221,22 @@ app.post('/api/agent/ingest-github', rateLimiter, async (req, res) => {
       testSuites: { unitTests: [], integrationTests: [] }
     });
   }
+// POST /api/agent/cypher-query - AI Text-to-Cypher Graph Query Endpoint
+app.post('/api/agent/cypher-query', rateLimiter, async (req, res) => {
+  try {
+    const { query, repoKey = 'default' } = req.body;
+    if (!query || typeof query !== 'string') {
+      return res.status(400).json({ success: false, message: 'Natural language query string is required.' });
+    }
+    const result = await queryGraphWithAI(query, repoKey);
+    return res.json(result);
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
 });
 
-
 app.listen(PORT, () => {
+
   console.log(`🚀 LangGraph Multi-Agent GitHub Platform Server running on port ${PORT}`);
 });
 
